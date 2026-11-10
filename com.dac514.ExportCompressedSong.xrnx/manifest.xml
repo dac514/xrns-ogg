@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RenoiseScriptingTool doc_version="0">
+  <ApiVersion>6.2</ApiVersion>
+  <Id>com.dac514.ExportCompressedSong</Id>
+  <Version>1.00</Version>
+  <Author>Dac Chartrand [dac.chartrand@gmail.com]</Author>
+  <Name>Export Compressed Song</Name>
+  <Category>Export, Sample</Category>
+  <Description>Save a copy of your song with its samples as OGG Vorbis, often a quarter of the size. Made for sharing.</Description>
+  <Platform>Windows, Mac, Linux</Platform>
+  <License>MIT</License>
+  <DocumentationPath>README.md</DocumentationPath>
+  <Homepage>https://github.com/dac514/xrns-ogg</Homepage>
+</RenoiseScriptingTool>

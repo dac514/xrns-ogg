@@ -6,7 +6,7 @@ command-line tooling to format, type-check, install, reload and inspect it while
 ## What you are working on
 
 - The tool is the single `*.xrnx/` folder in the repo root
-  (`com.example.MyTool.xrnx/` until `just init` renames it). Everything else is tooling.
+  (`com.dac514.ExportCompressedSong.xrnx/` until `just init` renames it). Everything else is tooling.
 - Lua dialect: **LuaJIT** = Lua 5.1 syntax (`unpack`, `loadstring`, `setfenv`;
   `bit` is built in; no `goto`, no `//`, no integer subtype).
 - Renoise API version **6.2** (Renoise 3.5). The API reference is vendored in
@@ -69,6 +69,29 @@ When asked to bring in kit fixes, read `UPGRADING.md` in https://github.com/dac5
 and apply the entries newer than this project, following the rules at the top of that page.
 Never rename this project's own `<Id>.xrnx` folder or ids.
 
+## How this tool works
+
+*File > Export Compressed Song...* saves the open song (`save_song()`, never `save_song_as`), reads
+the saved `.xrns` (a ZIP), exports each sample with `sample_buffer:save_as(wav)`, runs one job
+script with the user's encoder (`oggenc`, `ffmpeg` or `sox`) in the background, and writes a new
+archive where a sample entry becomes `.ogg` only when the OGG is smaller. `Song.xml` is copied
+untouched. Details and the research behind it: the module headers of `src/job.lua` and
+`src/encoder.lua`.
+
+- The job script writes `started`, `NNNN.done` (exit code) per sample and `finished`; the tool
+  polls these files from a timer. A `cancel` file stops it before the next sample.
+- Windows starts the script through PowerShell `Start-Process -WindowStyle Hidden` via `io.popen`
+  (no console, no inherited sockets). Linux and macOS use `os.execute("sh job.sh &")`, which
+  inherits the bridge port while it runs: do not `just reload` during an export there.
+- Each entry is matched to its API sample by the numbers in its name and checked against the
+  FLAC header (rate, channels, frames); a mismatch keeps the entry as it is.
+- `App.note(text)` appends to the dialog's Messages box (`App.messages`); the job logs through it.
+- Find (`App.find_encoders`) runs `src/finder.lua` in a coroutine from a timer, 25 ms per tick, and
+  stops when the dialog closes. It also runs when the dialog opens without a usable encoder.
+  `just reload` reinstalls the bundle and can reset the preferences, so the next dialog searches.
+- `App.export(target)` skips the file prompt, so the bridge can run an export:
+  `just eval 'APP.export([[/tmp/x.xrns]])'`, then poll `APP.job.phase` / `APP.job.message`.
+
 ## Directory map
 
 ```
@@ -87,10 +110,16 @@ docs/renoise/                 vendored xrnx guide pages (start/, guide/)
 <Id>.xrnx/manifest.xml        Id, Version, ApiVersion (rules under Hard constraints)
 <Id>.xrnx/cover.png           optional renoise.com cover (600x350), with thumbnail.png (120x45)
 <Id>.xrnx/main.lua            thin entry: package.path, preferences, APP = require "src.app", APP.start(), dev bridge
-<Id>.xrnx/src/app.lua         App.start/stop, App.reg (menu/key/notifier/timer), App.register_dialog, App.guard, App.defer
-<Id>.xrnx/src/ui.lua          ViewBuilder dialog; returns (vb, root)
-<Id>.xrnx/src/labels.lua      pure Lua (no renoise.*): the dialog's label strings; the unit-tested example
+<Id>.xrnx/src/app.lua         App.start/stop, App.reg, App.guard, App.defer; menu entry, prefs, export/cancel, encoder detection
+<Id>.xrnx/src/ui.lua          the dialog; build returns (vb, root); show_job/show_message/show_encoder update it
+<Id>.xrnx/src/job.lua         one export run: save, WAV export, background job script, archive rewrite (timer + coroutine)
+<Id>.xrnx/src/zip.lua         pure: crc32, read_entries, read_raw, rewrite (raw copy, never inflates, no ZIP64)
+<Id>.xrnx/src/encoder.lua     pure: encoder kind, command lines, job script, launch command, PATH search, hints, failure reasons
+<Id>.xrnx/src/finder.lua      pure: Find: search roots and a bounded breadth-first search over an injected file system
+<Id>.xrnx/src/song_file.lua   pure: sample entry names, .ogg names, replace-or-keep rule, FLAC STREAMINFO
+<Id>.xrnx/src/labels.lua      pure: quality, size and report strings
 tests/helper.lua              test helpers for tests/*_test.lua
+docs/screenshot.png           dialog screenshot for README.md
 <Id>.xrnx/dev/                dev bridge (bridge.lua, commands.lua, serialize.lua, home_port.lua); never shipped
 ```
 
@@ -125,7 +154,7 @@ tests/helper.lua              test helpers for tests/*_test.lua
   `sequencer.pattern_sequence_observable`, `phrase_mappings_observable`) fire *during* the edit:
   the list is updated, dependents (pattern tracks, sequence, selection) are not, and they also
   fire on undo/redo. Inside them never edit the song; observe the dependent object if it has an
-  observable, else `App.defer(fn)`. Demo: the tracks row in `src/ui.lua`.
+  observable, else `App.defer(fn)`.
 - ViewBuilder constructor tables accept only documented fields; a typo such as
   `vb:text { margin = 1 }` crashes at runtime and LuaLS cannot catch it.
 - Manifest: `Id` must equal the folder name without `.xrnx`; `Version` is a
