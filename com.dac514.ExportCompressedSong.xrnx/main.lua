@@ -28,8 +28,9 @@ _AUTO_RELOAD_DEBUG = false
 -- Preferences: created once per tool load; Renoise persists them as
 -- preferences.xml inside the tool folder.
 if not renoise.tool().preferences then
-  renoise.tool().preferences = renoise.Document.create "MyToolPreferences" {
-    greeting = "Hello from My Tool",
+  renoise.tool().preferences = renoise.Document.create "ExportCompressedSongPreferences" {
+    quality = 6,
+    encoder_path = "",
   }
 end
 
