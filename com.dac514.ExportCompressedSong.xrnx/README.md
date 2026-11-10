@@ -77,4 +77,4 @@ To get an encoder:
 
 ## License
 
-MIT. Source and issues: https://github.com/dac514/xrnx-ogg
+MIT. Source and issues: https://github.com/dac514/xrns-ogg

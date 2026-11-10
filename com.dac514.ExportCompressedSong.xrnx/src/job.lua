@@ -506,7 +506,7 @@ function M.check(opts)
     return "There is no song to export."
   end
   if song.file_name == "" then
-    return "Save the song once first (File > Save Song As...), then export it."
+    return "Save the song first: File > Save Song As..."
   end
   local path = opts.encoder_path
   if path == "" then

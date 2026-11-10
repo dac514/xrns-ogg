@@ -29,7 +29,7 @@ The user guide, which is also the page on renoise.com, is
 ## Install
 
 Download the `.xrnx` from the
-[releases](https://github.com/dac514/xrnx-ogg/releases) and drag it onto
+[releases](https://github.com/dac514/xrns-ogg/releases) and drag it onto
 Renoise. Renoise 3.5 or newer (API 6.2).
 
 ## How it works

@@ -362,12 +362,21 @@ local function show_problem(message)
   renoise.app():show_status(App.name .. ": " .. message)
 end
 
+---Update the song line of the open dialog (name, size, samples).
+local function refresh_song()
+  local entry = App.dialogs.main
+  if entry and entry.dialog.visible then
+    require("src.ui").show_song(entry.vb)
+  end
+end
+
 ---Ask for a target file, then start the export.
 ---@param target string|nil Skip the file prompt and write here (scripting, tests).
 function App.export(target)
   if App.job and App.job:running() then
     return
   end
+  refresh_song()
   local job_module = require "src.job"
   local prefs = App.prefs()
   local problem = job_module.check { encoder_path = prefs.encoder_path.value }
@@ -445,6 +454,7 @@ function App.start()
   }
   -- Close dialogs when the song changes so no view keeps stale song references.
   reg.notifier(renoise.tool().app_new_document_observable, App.close_dialogs)
+  reg.notifier(renoise.tool().app_saved_document_observable, App.guard(refresh_song))
   require("src.ui").watch_encoder(App)
   App.log "started"
 end

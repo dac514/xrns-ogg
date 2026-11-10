@@ -81,6 +81,8 @@ l1, l2 = labels.split_lines("one two three four five six", 12)
 t.eq(l1 .. "|" .. l2, "one two|three …e six", "split_lines: at a space, rest shortened")
 l1, l2 = labels.split_lines("abcdefghijklmnop", 10)
 t.eq(l1 .. "|" .. l2, "abcdefghij|klmnop", "split_lines: no space")
+l1, l2 = labels.split_lines("one two three four five six", 12, 30)
+t.eq(l1 .. "|" .. l2, "one two|three four five six", "split_lines: longer second line")
 
 t.eq(labels.names({}, 3), "", "names: none")
 t.eq(labels.names({ "Kick" }, 3), '"Kick"', "names: one")

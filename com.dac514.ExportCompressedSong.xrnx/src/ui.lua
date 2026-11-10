@@ -10,18 +10,30 @@ local labels = require "src.labels"
 
 local M = {}
 
-local MARGIN = renoise.ViewBuilder.DEFAULT_DIALOG_MARGIN
-local SPACING = renoise.ViewBuilder.DEFAULT_CONTROL_SPACING
-local SECTION = renoise.ViewBuilder.DEFAULT_DIALOG_SPACING
 local BUTTON_HEIGHT = renoise.ViewBuilder.DEFAULT_DIALOG_BUTTON_HEIGHT
 
-local WIDTH = 460 -- content width inside the dialog margin
-local LABEL = 64 -- left label column inside a group
-local GROUP_INNER = WIDTH - 2 * MARGIN
-local FIELD = GROUP_INNER - LABEL - SPACING -- slider; path field plus Browse button
-local BROWSE = 80
-local FIND = 56
-local LOG_HEIGHT = 92
+local WIDTH = 480 -- content width inside the dialog margin
+local DIALOG_MARGIN = 12
+local SECTION = 10 -- between the groups
+local PAD = 10 -- inside a group
+local LINE = 6 -- between the rows of a group
+local GAP = 4 -- between the controls of a row
+local CONTROL = 22 -- height of fields, buttons and the slider
+local GROUP_INNER = WIDTH - 2 * PAD
+local TITLE = 90 -- group title; the rest of that row shows the group's state
+local LABEL = 60 -- left label column of the encoder rows
+local FIELD = GROUP_INNER - LABEL - GAP
+local BROWSE = 84
+local FIND = 60
+local CANCEL = 84
+local SAVE = 104
+local REVEAL = 116
+local STATUS = WIDTH - CANCEL - SAVE - GAP - 12 -- status line beside the buttons
+local STATUS_CHARS = 52 -- what fits in STATUS; bold text is wider
+local STATUS_CHARS_BOLD = 44
+local DETAIL_CHARS = 92 -- what fits in WIDTH
+local DETAIL_CHARS_NARROW = 68 -- beside the "Show in folder" button
+local LOG_HEIGHT = 104
 local PLACEHOLDER = "Messages about the song, the encoder and the export show up here."
 
 ---Progress of the running job, 0..1, read by the canvas renderer.
@@ -81,7 +93,17 @@ local function view(vb, id)
   return vb.views[id]
 end
 
----Update the encoder line below the path field.
+---Change a text and keep its width. A text view grows to fit a longer text and
+---never shrinks again, which pushes its neighbours out of the group.
+---@param text_view renoise.Views.Text
+---@param text string
+local function set_text(text_view, text)
+  local width = text_view.width
+  text_view.text = text
+  text_view.width = width
+end
+
+---Update the encoder state in the title row of the Encoder group.
 ---@param vb renoise.ViewBuilder
 ---@param path string
 function M.show_encoder(vb, path)
@@ -94,25 +116,35 @@ function M.show_encoder(vb, path)
   local kind = path ~= "" and encoder.kind(path) or nil
   local show_hint = false
   if path == "" then
-    info.text = "No encoder chosen. Find searches this computer for one."
+    set_text(info, "No encoder chosen. Find searches this computer for one.")
     info.style = "strong"
     show_hint = true
   elseif not io.exists(path) then
-    info.text = "This file does not exist."
+    set_text(info, "This file does not exist.")
     info.style = "strong"
     show_hint = true
   elseif not kind then
-    info.text = "Unknown program. Choose oggenc, ffmpeg or sox."
+    set_text(info, "Unknown program. Choose oggenc, ffmpeg or sox.")
     info.style = "strong"
     show_hint = true
   else
-    info.text = "Encoding with " .. kind .. "."
-    info.style = "disabled"
+    set_text(info, "Encoding with " .. kind .. ".")
+    info.style = "normal"
   end
   local h = encoder.download_hint(os.platform())
-  hint.text = h.text
+  set_text(hint, h.text)
   hint.visible = show_hint
   link.visible = show_hint
+end
+
+---Show the open song's name, size and sample count again. The song line goes
+---stale when the song is saved or samples change while the dialog is open.
+---@param vb renoise.ViewBuilder
+function M.show_song(vb)
+  local song_info = view(vb, "song_info") --[[@as renoise.Views.Text|nil]]
+  if song_info then
+    set_text(song_info, song_text())
+  end
 end
 
 ---Whether the log still shows its placeholder text.
@@ -141,7 +173,8 @@ end
 ---@param current string
 function M.show_found(vb, found, current)
   local popup = view(vb, "found") --[[@as renoise.Views.Popup|nil]]
-  if not popup then
+  local row = view(vb, "found_row")
+  if not (popup and row) then
     return
   end
   local finder = require "src.finder"
@@ -156,40 +189,60 @@ function M.show_found(vb, found, current)
   if #items > 0 then
     popup.value = index
   end
-  popup.visible = #items >= 2
+  row.visible = #items >= 2
 end
 
----Show what the encoder search is doing in the encoder line.
+---Show what the encoder search is doing in the title row of the Encoder group.
 ---@param vb renoise.ViewBuilder
 ---@param text string
 function M.show_search(vb, text)
   local info = view(vb, "encoder_info") --[[@as renoise.Views.Text|nil]]
   if info then
-    info.text = text
-    info.style = "disabled"
+    set_text(info, text)
+    info.style = "normal"
   end
 end
 
----Show a message in the status lines.
+---Show a message in the status line beside the buttons. A long message, or a
+---`detail`, continues on a second line that appears below the buttons.
 ---@param vb renoise.ViewBuilder
 ---@param message string
 ---@param is_error boolean|nil
 ---@param detail string|nil Second line.
-function M.show_message(vb, message, is_error, detail)
+---@param with_reveal boolean|nil Show the "Show in folder" button beside the second line.
+function M.show_message(vb, message, is_error, detail, with_reveal)
   local status = view(vb, "status") --[[@as renoise.Views.Text|nil]]
   local second = view(vb, "status_detail") --[[@as renoise.Views.Text|nil]]
-  if status and second then
-    local has_detail = detail ~= nil and detail ~= ""
-    if has_detail then
-      status.text, second.text =
-        labels.ellipsize(message, 80), labels.ellipsize(detail --[[@as string]], 88)
-    else
-      status.text, second.text = labels.split_lines(message, 88)
-    end
-    status.style = is_error and "strong" or "normal"
-    second.style = is_error and "strong" or "normal"
-    status.font = has_detail and "bold" or "normal"
+  local row = view(vb, "detail_row")
+  local reveal = view(vb, "reveal")
+  if not (status and second and row and reveal) then
+    return
   end
+  -- A row that grew makes the dialog wider for good, so the row must never be
+  -- wider than WIDTH: narrow the text before the button shows up.
+  if with_reveal then
+    second.width = WIDTH - REVEAL - GAP
+    reveal.visible = true
+  else
+    reveal.visible = false
+    second.width = WIDTH
+  end
+  local second_chars = with_reveal and DETAIL_CHARS_NARROW or DETAIL_CHARS
+  local has_detail = detail ~= nil and detail ~= ""
+  local first, rest
+  if has_detail then
+    first = labels.ellipsize(message, STATUS_CHARS_BOLD)
+    rest = labels.ellipsize(detail --[[@as string]], second_chars)
+  else
+    first, rest = labels.split_lines(message, STATUS_CHARS, second_chars)
+  end
+  set_text(status, first)
+  set_text(second, rest)
+  -- Results stand out: an error, or the headline of a finished export.
+  status.style = (is_error or has_detail) and "strong" or "normal"
+  second.style = is_error and "strong" or "normal"
+  status.font = has_detail and "bold" or "normal"
+  row.visible = rest ~= "" or with_reveal == true
 end
 
 ---Reflect a job's state in the dialog.
@@ -211,7 +264,7 @@ function M.show_job(vb, job)
   if bar then
     bar:update()
   end
-  M.show_message(vb, job.message, job.phase == "failed", job.detail)
+  M.show_message(vb, job.message, job.phase == "failed", job.detail, job.phase == "done")
   local function set_active(id, active)
     local v = view(vb, id)
     if v then
@@ -226,15 +279,8 @@ function M.show_job(vb, job)
   set_active("browse", not running)
   set_active("find", not running)
   set_active("found", not running)
-  local reveal = view(vb, "reveal")
-  if reveal then
-    reveal.visible = job.phase == "done"
-  end
   if job.phase == "done" then
-    local song_info = view(vb, "song_info") --[[@as renoise.Views.Text|nil]]
-    if song_info then
-      song_info.text = song_text()
-    end
+    M.show_song(vb)
   end
 end
 
@@ -245,75 +291,80 @@ function M.build(app)
   local prefs = app.prefs()
   progress, progress_state = 0, "idle"
 
-  local function group(title, ...)
+  ---A framed group. Its first row is the title and, to the right, the group's
+  ---current state (`state`, a text view of width GROUP_INNER - TITLE).
+  ---@param title string
+  ---@param state renoise.Views.Text|nil
+  local function group(title, state, ...)
     return vb:column {
       background = "group",
-      margin = MARGIN,
-      spacing = SPACING + 2,
+      margin = PAD,
+      spacing = LINE,
       width = WIDTH,
-      vb:text { text = title, font = "bold", style = "strong" },
+      vb:row {
+        vb:text { text = title, font = "bold", style = "strong", width = TITLE },
+        state or vb:space { width = GROUP_INNER - TITLE },
+      },
       ...,
     }
   end
 
-  local function indent(...)
+  ---A row of the Encoder group: a label, then controls that share FIELD.
+  local function labelled(label, ...)
     return vb:row {
-      spacing = SPACING,
-      vb:space { width = LABEL },
+      spacing = GAP,
+      vb:text { text = label, width = LABEL, height = CONTROL },
       ...,
     }
   end
 
-  local third = math.floor(FIELD / 3)
+  local half = math.floor(GROUP_INNER / 2)
   local quality_group = group(
     "Quality",
-    vb:row {
-      spacing = SPACING,
-      vb:text { text = "Vorbis", width = LABEL },
-      vb:slider {
-        id = "quality",
-        width = FIELD,
-        min = -1,
-        max = 10,
-        default = 6,
-        value = labels.quality_step(prefs.quality.value),
-        tooltip = "Vorbis quality, -1 (smallest) to 10 (best sound). 6 is a good start.",
-        steps = { 1, 2 },
-        notifier = app.guard(function(value)
-          -- Renoise does not call a notifier again for a change made inside it,
-          -- so update everything here, then snap the knob to the whole step.
-          local step = labels.quality_step(value)
-          prefs.quality.value = step
-          local text = vb.views.quality_text --[[@as renoise.Views.Text]]
-          text.text = labels.quality(step)
-          if step ~= value then
-            local slider = vb.views.quality --[[@as renoise.Views.Slider]]
-            slider.value = step
-          end
-        end),
-      },
+    vb:text {
+      id = "quality_text",
+      width = GROUP_INNER - TITLE,
+      align = "right",
+      font = "bold",
+      text = labels.quality(prefs.quality.value),
     },
-    indent(
-      vb:text { text = "◂ smaller file", style = "disabled", width = third },
-      vb:text {
-        id = "quality_text",
-        width = FIELD - 2 * third - 2 * SPACING,
-        align = "center",
-        font = "bold",
-        text = labels.quality(prefs.quality.value),
-      },
-      vb:text { text = "better sound ▸", style = "disabled", width = third, align = "right" }
-    )
+    vb:slider {
+      id = "quality",
+      width = GROUP_INNER,
+      height = CONTROL,
+      min = -1,
+      max = 10,
+      default = 6,
+      value = labels.quality_step(prefs.quality.value),
+      tooltip = "Vorbis quality, -1 (smallest) to 10 (best sound). 6 is a good start.",
+      steps = { 1, 2 },
+      notifier = app.guard(function(value)
+        -- Renoise does not call a notifier again for a change made inside it,
+        -- so update everything here, then snap the knob to the whole step.
+        local step = labels.quality_step(value)
+        prefs.quality.value = step
+        set_text(vb.views.quality_text --[[@as renoise.Views.Text]], labels.quality(step))
+        if step ~= value then
+          local slider = vb.views.quality --[[@as renoise.Views.Slider]]
+          slider.value = step
+        end
+      end),
+    },
+    vb:row {
+      vb:text { text = "◂ Smaller file", width = half },
+      vb:text { text = "Better sound ▸", width = GROUP_INNER - half, align = "right" },
+    }
   )
 
   local encoder_group = group(
     "Encoder",
-    vb:row {
-      spacing = SPACING,
-      vb:text { text = "Program", width = LABEL },
+    vb:text { id = "encoder_info", width = GROUP_INNER - TITLE, align = "right", text = "" },
+    labelled(
+      "Program",
       vb:textfield {
         id = "encoder_path",
-        width = FIELD - FIND - BROWSE - 2 * SPACING,
+        width = FIELD - FIND - BROWSE - 2 * GAP,
+        height = CONTROL,
         bind = prefs.encoder_path,
         tooltip = "Full path to oggenc, ffmpeg or sox. Saved for next time.",
       },
@@ -321,6 +372,7 @@ function M.build(app)
         id = "find",
         text = "Find",
         width = FIND,
+        height = CONTROL,
         tooltip = "Search this computer for oggenc, ffmpeg or sox, also inside other programs.",
         notifier = app.guard(app.find_encoders),
       },
@@ -328,37 +380,45 @@ function M.build(app)
         id = "browse",
         text = "Browse...",
         width = BROWSE,
+        height = CONTROL,
         notifier = app.guard(app.browse_encoder),
-      },
-    },
-    indent(vb:text { id = "encoder_info", text = "" }),
-    indent(vb:popup {
-      id = "found",
-      width = FIELD,
+      }
+    ),
+    vb:row {
+      id = "found_row",
       visible = false,
-      items = {},
-      tooltip = "Every encoder Find came across. The best kind comes first.",
-      notifier = app.guard(function(index)
-        local path = app.found and app.found[index]
-        if path and path ~= prefs.encoder_path.value then
-          prefs.encoder_path.value = path
-        end
-      end),
-    }),
-    indent(vb:text { id = "encoder_hint", text = "", visible = false }),
-    indent(vb:link {
+      labelled(
+        "Found",
+        vb:popup {
+          id = "found",
+          width = FIELD,
+          height = CONTROL,
+          items = {},
+          tooltip = "Every encoder Find came across. The best kind comes first.",
+          notifier = app.guard(function(index)
+            local path = app.found and app.found[index]
+            if path and path ~= prefs.encoder_path.value then
+              prefs.encoder_path.value = path
+            end
+          end),
+        }
+      ),
+    },
+    vb:text { id = "encoder_hint", text = "", width = GROUP_INNER, visible = false },
+    vb:link {
       id = "encoder_link",
       text = "Where to get an encoder ▸",
       visible = false,
       notifier = app.guard(function()
         renoise.app():open_url(encoder.download_hint(os.platform()).url)
       end),
-    })
+    }
   )
 
   local messages = app.messages or {}
   local log_group = group(
     "Messages",
+    nil,
     vb:multiline_text {
       id = "log",
       width = GROUP_INNER,
@@ -369,8 +429,10 @@ function M.build(app)
   )
   has_placeholder = #messages == 0
 
+  -- The status shares a row with the buttons. The second line sits below them,
+  -- so the buttons do not move when it appears.
   local footer = vb:column {
-    spacing = SPACING + 2,
+    spacing = LINE,
     width = WIDTH,
     vb:canvas {
       id = "progress",
@@ -380,17 +442,42 @@ function M.build(app)
       render = render_progress,
     },
     vb:column {
+      spacing = GAP,
       width = WIDTH,
-      vb:text { id = "status", text = "Ready.", width = WIDTH },
-      vb:text { id = "status_detail", text = "", width = WIDTH },
-    },
-    vb:horizontal_aligner {
-      mode = "justify",
-      width = WIDTH,
+      vb:horizontal_aligner {
+        mode = "justify",
+        width = WIDTH,
+        vb:text { id = "status", text = "Ready.", width = STATUS, height = BUTTON_HEIGHT },
+        vb:row {
+          spacing = GAP,
+          vb:button {
+            id = "cancel",
+            text = "Cancel",
+            width = CANCEL,
+            height = BUTTON_HEIGHT,
+            active = false,
+            notifier = app.guard(app.cancel),
+          },
+          vb:button {
+            id = "save",
+            text = "Save...",
+            width = SAVE,
+            height = BUTTON_HEIGHT,
+            font = "bold",
+            tooltip = "Save the song, then choose where to write the compressed copy.",
+            notifier = app.guard(app.export),
+          },
+        },
+      },
       vb:row {
+        id = "detail_row",
+        spacing = GAP,
+        visible = false,
+        vb:text { id = "status_detail", text = "", width = WIDTH, height = BUTTON_HEIGHT },
         vb:button {
           id = "reveal",
           text = "Show in folder",
+          width = REVEAL,
           height = BUTTON_HEIGHT,
           visible = false,
           notifier = app.guard(function()
@@ -402,39 +489,25 @@ function M.build(app)
           end),
         },
       },
-      vb:row {
-        spacing = SPACING + 2,
-        vb:button {
-          id = "cancel",
-          text = "Cancel",
-          width = 80,
-          height = BUTTON_HEIGHT,
-          active = false,
-          notifier = app.guard(app.cancel),
-        },
-        vb:button {
-          id = "save",
-          text = "Save...",
-          width = 100,
-          height = BUTTON_HEIGHT,
-          font = "bold",
-          tooltip = "Save the song, then choose where to write the compressed copy.",
-          notifier = app.guard(app.export),
-        },
-      },
     },
   }
 
   local root = vb:column {
     id = "root",
-    margin = MARGIN + 2,
+    margin = DIALOG_MARGIN,
     spacing = SECTION,
     vb:column {
-      spacing = 1,
-      vb:text { id = "song_info", text = song_text(), font = "big" },
+      spacing = 2,
+      vb:text {
+        id = "song_info",
+        text = song_text(),
+        font = "big",
+        style = "strong",
+        width = WIDTH,
+      },
       vb:text {
         text = "Writes a copy of the song with its samples as OGG Vorbis.",
-        style = "disabled",
+        width = WIDTH,
       },
     },
     quality_group,

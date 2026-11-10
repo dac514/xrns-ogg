@@ -140,8 +140,9 @@ end
 ---needed.
 ---@param text string
 ---@param max integer
+---@param max_second integer|nil Characters on the second line. Default: `max`.
 ---@return string first, string second
-function M.split_lines(text, max)
+function M.split_lines(text, max, max_second)
   local chars = {}
   for ch in text:gmatch "[%z\1-\127\194-\244][\128-\191]*" do
     chars[#chars + 1] = ch
@@ -161,7 +162,7 @@ function M.split_lines(text, max)
   cut = sentence or cut or max
   local first = table.concat(chars, "", 1, cut):gsub("%s+$", "")
   local second = table.concat(chars, "", cut + 1):gsub("^%s+", "")
-  return first, M.ellipsize(second, max)
+  return first, M.ellipsize(second, max_second or max)
 end
 
 ---First line of the result: "Saved Demo-ogg.xrns".
