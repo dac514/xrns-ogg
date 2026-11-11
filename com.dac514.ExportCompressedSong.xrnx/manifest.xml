@@ -2,7 +2,7 @@
 <RenoiseScriptingTool doc_version="0">
   <ApiVersion>6.2</ApiVersion>
   <Id>com.dac514.ExportCompressedSong</Id>
-  <Version>1.00</Version>
+  <Version>1.01</Version>
   <Author>Dac Chartrand [dac.chartrand@gmail.com]</Author>
   <Name>Export Compressed Song</Name>
   <Category>Export, Sample</Category>
@@ -11,4 +11,5 @@
   <License>MIT</License>
   <DocumentationPath>README.md</DocumentationPath>
   <Homepage>https://github.com/dac514/xrns-ogg</Homepage>
+  <Discussion>https://forum.renoise.com/t/new-tool-3-5-ai-export-compressed-song/79855</Discussion>
 </RenoiseScriptingTool>
